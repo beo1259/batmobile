@@ -1,0 +1,60 @@
+#include <iostream>
+#include <pigpio.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <vector>
+
+using namespace std;
+
+vector<uint> motor1 = {24, 23};
+vector<uint> motor2 = {25, 18};
+vector<uint> motor3 = {4, 17};
+vector<uint> motor4 = {27, 22};
+
+vector<vector<uint>> motors = {motor1, motor2, motor3, motor4};
+
+int setup() {
+
+  if (gpioInitialise() < 0) {
+    cerr << "pigpio init failed.";
+    return -1;
+  }
+
+  for (auto &motor : motors) {
+    gpioSetMode(motor[0], PI_OUTPUT);
+    gpioSetMode(motor[1], PI_OUTPUT);
+  }
+
+  for (auto &motor : motors) {
+    cout << motor[0] << ": " << gpioGetMode(motor[0]) << ", " << motor[1]
+         << ": " << gpioGetMode(motor[1]) << "\n";
+  }
+
+  return 0;
+}
+
+void setSpeed(uint firstPin, uint secondPin, uint speed) {
+  if (speed > 255) {
+    speed = 255;
+  }
+
+  gpioPWM(firstPin, speed);
+  gpioPWM(secondPin, speed);
+}
+
+int main() {
+
+  std::cout << "Using pigpio version " << gpioVersion() << std::endl;
+  std::cout << "Running on " << gpioHardwareRevision() << std::endl;
+
+  if (setup() < 0) {
+    cout << "Failed at setup.";
+    return 0;
+  }
+
+  setSpeed(motor1[0], motor2[1], 255);
+
+  gpioTerminate();
+
+  return 0;
+}
