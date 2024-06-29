@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/usr -I/usr/include/hidapi
+CXX_INCLUDES = -I/usr -I/usr/include/libevdev-1.0
 
 CXX_FLAGS = -std=gnu++11
 
