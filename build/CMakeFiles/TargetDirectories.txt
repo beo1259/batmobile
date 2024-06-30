@@ -1,3 +1,0 @@
-/home/brayden/batmobile/build/CMakeFiles/main.dir
-/home/brayden/batmobile/build/CMakeFiles/edit_cache.dir
-/home/brayden/batmobile/build/CMakeFiles/rebuild_cache.dir
