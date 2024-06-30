@@ -22,6 +22,9 @@ vector<int> motor4 = {27, 22};
 // Store them all in a vector so we can easily iterate.
 vector<vector<int>> motors = {motor1, motor2, motor3, motor4};
 
+// ** Basic Helpers **
+bool isInRange(int val, int low, int high) { return low < val && val < high; }
+
 // *****
 // Sets each motor to out mode, and confirms this by printing each pin's mode.
 int setup() {
@@ -40,8 +43,10 @@ int setup() {
 
 // ******
 // Test a single motor
-// Parameters: Both of the motors 'pins', the desired 'speed' (0-255), the time
-// to it for in 'milliseconds', the 'direction' 1 = fwd, 0 = bckwd
+/*
+ Parameters: Both of the motors 'pins', the desired 'speed' (0-255), the time
+ to it for in 'milliseconds', the 'direction' 1 = fwd, 0 = bckwd
+*/
 void testMotor(vector<int> pins, int speed, uint milliseconds, int direction) {
 
   if (direction == 0) {
@@ -76,67 +81,95 @@ void kill() {
   }
 }
 
-// *****
-// Returns pin 0 for 'dir' == true, pin 1 for 'dir' == false.
-// (This is slightly confusing because it's essentially reversing the bool, but
-// I think it's more intuitive for 'dir' == true to mean forward, and 'dir'
-// false mean backward.
-auto pinFromDirection = [](bool dir) -> int { return dir ? 0 : 1; };
+// Data structure for a unit of trigger press (either LT or RT).
+struct TriggerUnit {
+  bool direction; // true = forward, false = backward
+  int speed;      // 0-255
+
+  bool getDirection() { return direction; }
+  void setDirection(bool newDir) { direction = newDir; }
+
+  int getSpeed() { return direction; }
+  void setSpeed(int newSpeed) { speed = newSpeed; }
+};
+
+// Data structure for a unit of movement (includes left joystick movement + the
+// current TriggerUnit).
+struct MovementUnit {
+  int leftJoystickY; // 0-255
+  int leftJoystickX; // 0-255
+  TriggerUnit triggerUnit;
+
+  int getLeftJoystickY() { return leftJoystickY; }
+  void setLeftJoystickY(int newLjY) { leftJoystickY = newLjY; }
+
+  int getLeftJoystickX() { return leftJoystickX; }
+  void setLeftJoystickX(int newLjX) { leftJoystickX = newLjX; }
+
+  TriggerUnit getTriggerUnit() { return triggerUnit; }
+  void setTriggerUnit(TriggerUnit newTriggerUnit) {
+    triggerUnit = newTriggerUnit;
+  }
+};
+
+// GLOBAL MOVEMENT UNIT
+MovementUnit globalMovement;
 
 // *****
 // Drive forward (true) or backward (false) depending on 'direction' param.
-void drive(bool direction, int speed) {
-
-  int pin = pinFromDirection(direction);
+void basicDrive(bool direction, int speed) {
 
   for (auto &motor : motors) {
-    gpioPWM(motor[pin], speed);
+    gpioPWM(motor[direction], speed);
   }
 
   return;
 }
 
 // *****
-int CURRENT_LJ_Y;
-// *****
-int GetLeftJoystickYVal() { return CURRENT_LJ_Y; }
-void SetLeftJoystickYVal(int yVal) { CURRENT_LJ_Y = yVal; }
+// Used to steer the car.
+void complexDrive(bool direction, int speed, int leftX) {
 
-// *****
-// Activates the drive function with the given directyion and speed (to be used
-// with the RT and LT on the PS5 controller.)
-auto triggerDrive = [](bool direction, int speed) -> void {
-  speed > 0 ? drive(direction, speed) : kill();
-};
-
-// *****
-// Drives either forward or backward depending on the trigger down press
-// value/direction.
-void driveCar(string code, int value) {
-  // Right Trigger
-  if (code == "ABS_RZ")
-    triggerDrive(true, value);
-
-  // Left Trigger
-  if (code == "ABS_Z")
-    triggerDrive(false, value);
-
-  if (code == "ABS_Z" && code == "ABS_RZ") {
-    cout << "cndasjkcvndsakjlvnfdskljvnfdjkslvnfdskjlvnfdskjlvnfdjkslvnfdskljvn"
-            "fdsjkvnfdskjlvn";
+  if (leftX < 255 / 2) {
+    gpioPWM(motor1[direction], 0);
+    gpioPWM(motor1[direction], speed);
+    gpioPWM(motor2[direction], speed);
+    gpioPWM(motor2[direction], 0);
+    gpioPWM(motor3[direction], speed);
+    gpioPWM(motor3[direction], 0);
+    gpioPWM(motor4[direction], 0);
+    gpioPWM(motor4[direction], speed);
+  } else {
+    gpioPWM(motor1[direction], speed);
+    gpioPWM(motor1[direction], 0);
+    gpioPWM(motor2[direction], 0);
+    gpioPWM(motor2[direction], speed);
+    gpioPWM(motor3[direction], 0);
+    gpioPWM(motor3[direction], speed);
+    gpioPWM(motor4[direction], speed);
+    gpioPWM(motor4[direction], 0);
   }
 }
 
-// TODO
-void turnCar(int xVal) { int yVal = GetLeftJoystickYVal(); }
+// ******
+// The main function for directing the handling of the car based on
+// controller input.
+void handleMovement(bool direction, int speed, int leftX) {
+  if (isInRange(leftX, 0, 255)) {
+    basicDrive(direction, speed);
+    return;
+  }
+
+  complexDrive(direction, speed, leftX);
+}
 
 // *****
-// For interacting with ps5 controller
+// For interacting with a ps5 controller
 int fd;
 int rc;
 struct libevdev *dev;
 // *****
-void ps5() {
+void handleControllerInput() {
   fd = open("/dev/input/event4", O_RDONLY | O_NONBLOCK);
   if (fd < 0) {
     fprintf(stderr, "error: %d %s\n", errno, strerror(errno));
@@ -160,16 +193,28 @@ void ps5() {
 
       if (type != "EV_SYN") {
 
-        std::cout << "Type " << type << ", Code " << code << ", Value " << value
-                  << std::endl;
+        // std::cout << "Type " << type << ", Code " << code << ", Value " <<
+        // value << std::endl;
 
-        if (code == "ABS_Y") {
-          SetLeftJoystickYVal(value);
+        if (code == "ABS_RZ") {
+          globalMovement.setTriggerUnit({1, value});
         }
-        if (code == "ABS_X") {
-          turnCar(value);
+
+        else if (code == "ABS_Z") {
+          globalMovement.setTriggerUnit({0, value});
         }
-        driveCar(code, value);
+
+        else if (code == "ABS_Y") {
+          globalMovement.setLeftJoystickY(value);
+        }
+
+        else if (code == "ABS_X") {
+          globalMovement.setLeftJoystickX(value);
+        }
+
+        handleMovement(globalMovement.getTriggerUnit().direction,
+                       globalMovement.getTriggerUnit().speed,
+                       globalMovement.getLeftJoystickX());
       }
     }
   }
@@ -188,8 +233,9 @@ int main() {
   }
 
   kill();
+  globalMovement.setLeftJoystickX(125);
 
-  ps5();
+  handleControllerInput();
 
   kill();
 
