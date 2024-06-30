@@ -13,27 +13,58 @@
 
 using namespace std;
 
-// For each motor, [0] = IN pin (forward), [1] = OUT pin (backward).
-vector<int> motor1 = {24, 23};
-vector<int> motor2 = {25, 18};
-vector<int> motor3 = {4, 17};
-vector<int> motor4 = {27, 22};
+const int RIGHT_FRONT_FORWARD = 23;
+const int RIGHT_FRONT_REVERSE = 24;
+const int LEFT_FRONT_FORWARD = 18;
+const int LEFT_FRONT_REVERSE = 25;
+const int RIGHT_BACK_FORWARD = 17;
+const int RIGHT_BACK_REVERSE = 4;
+const int LEFT_BACK_FORWARD = 22;
+const int LEFT_BACK_REVERSE = 27;
 
-// Store them all in a vector so we can easily iterate.
-vector<vector<int>> motors = {motor1, motor2, motor3, motor4};
+// The 2d array of each motor and it's two GPIO pins. Made a struct for
+// readability.
+struct MotorGroup {
+  int motors[4][2];
+};
 
-// ** Basic Helpers **
-bool isInRange(int val, int low, int high) { return low < val && val < high; }
+// Data structure for a unit of trigger press (either LT or RT).
+class TriggerUnit {
+public:
+  bool direction; // true = forward, false = reverse
+  int speed;      // 0-255
+
+  TriggerUnit(bool direction, int speed)
+      : direction(direction), speed(speed) {};
+};
+
+// Data structure for a unit of movement (includes left joystick movement + the
+// current TriggerUnit).
+class MovementUnit {
+public:
+  int leftX; // 0-255
+  int leftY; // 0-255
+  TriggerUnit *triggerUnit;
+
+  MovementUnit(int leftX, int leftY, TriggerUnit *triggerUnit)
+      : leftX(leftX), leftY(leftY), triggerUnit(triggerUnit) {};
+};
 
 // *****
-// Sets each motor to out mode, and confirms this by printing each pin's mode.
-int setup() {
+// Helper #1
+bool bothInRange(int val1, int val2, int low, int high) {
+  return ((low <= val1) && (low <= val2)) && ((val1 <= high) && (val2 <= high));
+}
+
+// *****
+// Sets each motor to output mode.
+int setup(MotorGroup *motorGroup) {
   if (gpioInitialise() < 0) {
     cerr << "pigpio initialization failed.";
     return -1;
   }
 
-  for (auto &motor : motors) {
+  for (auto &motor : motorGroup->motors) {
     gpioSetMode(motor[0], PI_OUTPUT);
     gpioSetMode(motor[1], PI_OUTPUT);
   }
@@ -42,109 +73,88 @@ int setup() {
 }
 
 // ******
-// Test a single motor
-/*
- Parameters: Both of the motors 'pins', the desired 'speed' (0-255), the time
- to it for in 'milliseconds', the 'direction' 1 = fwd, 0 = bckwd
-*/
-void testMotor(vector<int> pins, int speed, uint milliseconds, int direction) {
-
-  if (direction == 0) {
-    direction = pins[1];
-  } else if (direction == 1) {
-    direction = pins[0];
-  } else {
-    cerr << "Direction is 0 for forward or 1 for backward.";
-  }
-
-  int microseconds = (milliseconds * 1000.0);
-
-  if (speed > 255) {
-    speed = 255;
-  }
-
-  gpioPWM(direction, speed);
-
-  usleep(microseconds);
-
-  gpioPWM(direction, 0);
-
-  return;
-}
-
-// ******
 // Kill all motors.
-void kill() {
-  for (auto &motor : motors) {
+void kill(MotorGroup *motorGroup) {
+  for (auto &motor : motorGroup->motors) {
     gpioPWM(motor[0], 0);
     gpioPWM(motor[1], 0);
   }
 }
 
-// Data structure for a unit of trigger press (either LT or RT).
-struct TriggerUnit {
-  bool &direction; // true = forward, false = backward
-  int &speed;      // 0-255
-};
-
-// Data structure for a unit of movement (includes left joystick movement + the
-// current TriggerUnit).
-struct MovementUnit {
-  int &leftX; // 0-255
-  TriggerUnit *triggerUnit;
-};
+// ******
+// Kill a single motor's pin.
+void killPin(int pin) { gpioPWM(pin, 0); }
 
 // *****
-// Drive forward (true) or backward (false) depending on 'direction' param.
-void basicDrive(bool direction, int speed) {
+// Tests a single motor for 2 seconds.
+void testMotor(int pin) {
+  gpioPWM(pin, 255);
 
-  for (auto &motor : motors) {
-    gpioPWM(motor[direction], speed);
+  usleep(2000 * 1000);
+
+  killPin(pin);
+}
+
+// *****
+// Drive forward (true) or reverse (false) depending on 'direction' param.
+void driveStraight(MotorGroup *motorGroup, TriggerUnit *triggerUnit) {
+  for (auto &motor : motorGroup->motors) {
+    gpioPWM(motor[!triggerUnit->direction], triggerUnit->speed);
   }
-
-  return;
 }
 
 // *****
 // Used to steer the car.
-void complexDrive(bool direction, int speed, int leftX) {
+void complexDrive(MotorGroup *motorGroup, MovementUnit *unit) {
+  int &speed = unit->triggerUnit->speed;
+  int &X = unit->leftX;
 
-  if (leftX < 255 / 2) {
-    gpioPWM(motor1[direction], 0);
-    gpioPWM(motor1[direction], speed);
-    gpioPWM(motor2[direction], speed);
-    gpioPWM(motor2[direction], 0);
-    gpioPWM(motor3[direction], speed);
-    gpioPWM(motor3[direction], 0);
-    gpioPWM(motor4[direction], 0);
-    gpioPWM(motor4[direction], speed);
+  if (X < 255 / 2) { // Left turn.
+    gpioPWM(RIGHT_BACK_FORWARD, speed);
+    gpioPWM(RIGHT_BACK_REVERSE, 0);
+    gpioPWM(RIGHT_FRONT_FORWARD, speed);
+    gpioPWM(RIGHT_FRONT_REVERSE, 0);
+    gpioPWM(LEFT_BACK_REVERSE, speed);
+    gpioPWM(LEFT_BACK_FORWARD, 0);
+    gpioPWM(LEFT_FRONT_REVERSE, speed);
+    gpioPWM(LEFT_FRONT_FORWARD, 0);
   } else {
-    gpioPWM(motor1[direction], speed);
-    gpioPWM(motor1[direction], 0);
-    gpioPWM(motor2[direction], 0);
-    gpioPWM(motor2[direction], speed);
-    gpioPWM(motor3[direction], 0);
-    gpioPWM(motor3[direction], speed);
-    gpioPWM(motor4[direction], speed);
-    gpioPWM(motor4[direction], 0);
+    gpioPWM(RIGHT_BACK_FORWARD, 0);
+    gpioPWM(RIGHT_BACK_REVERSE, speed);
+    gpioPWM(RIGHT_FRONT_FORWARD, 0);
+    gpioPWM(RIGHT_FRONT_REVERSE, speed);
+    gpioPWM(LEFT_BACK_REVERSE, 0);
+    gpioPWM(LEFT_BACK_FORWARD, speed);
+    gpioPWM(LEFT_FRONT_REVERSE, 0);
+    gpioPWM(LEFT_FRONT_FORWARD, speed);
   }
 }
 
 // ******
-// The main function for directing the handling of the car based on
+// The function for directing the handling of the car based on
 // controller input.
-void handleMovement(MovementUnit *&unit) {
-  basicDrive(unit->triggerUnit->direction, unit->triggerUnit->speed);
-  // complexDrive(direction, speed, leftX);
+void handleMovement(MotorGroup *motorGroup, MovementUnit *unit) {
+  if (unit->triggerUnit->speed == 0) {
+    kill(motorGroup);
+    return;
+  }
+
+  if (bothInRange(unit->leftX, unit->leftY, 70, 200)) {
+    kill(motorGroup);
+    driveStraight(motorGroup, unit->triggerUnit);
+  } else {
+    complexDrive(motorGroup, unit);
+  }
 }
 
 // *****
 // For interacting with a ps5 controller
-int fd;
-int rc;
-struct libevdev *dev;
 // *****
-void handleControllerInput() {
+void handleControllerInput(MotorGroup *motorGroup) {
+  int fd;
+  int rc;
+  struct libevdev *dev;
+
   fd = open("/dev/input/event4", O_RDONLY | O_NONBLOCK);
   if (fd < 0) {
     fprintf(stderr, "error: %d %s\n", errno, strerror(errno));
@@ -160,11 +170,8 @@ void handleControllerInput() {
   struct input_event ev;
 
   // Initialize drive values;
-  MovementUnit *movementUnit;
-  movementUnit->leftX = 255 / 2;
-  movementUnit->triggerUnit->direction = true;
-  movementUnit->triggerUnit->speed = 0;
-  cout << "here";
+  TriggerUnit triggerUnit(true, 0);
+  MovementUnit movementUnit(255 / 2, 255 / 2, &triggerUnit);
 
   while (true) {
     while (libevdev_next_event(dev, LIBEVDEV_READ_FLAG_NORMAL, &ev) ==
@@ -176,20 +183,24 @@ void handleControllerInput() {
       if (type != "EV_SYN") {
 
         if (code == "ABS_RZ") {
-          movementUnit->triggerUnit->direction = true;
-          movementUnit->triggerUnit->speed = ev.value;
+          movementUnit.triggerUnit->direction = true;
+          movementUnit.triggerUnit->speed = ev.value;
         }
 
         else if (code == "ABS_Z") {
-          movementUnit->triggerUnit->direction = false;
-          movementUnit->triggerUnit->speed = ev.value;
+          movementUnit.triggerUnit->direction = false;
+          movementUnit.triggerUnit->speed = ev.value;
         }
 
         else if (code == "ABS_X") {
-          movementUnit->leftX = ev.value;
+          movementUnit.leftX = ev.value;
         }
 
-        handleMovement(movementUnit);
+        else if (code == "ABS_Y") {
+          movementUnit.leftY = ev.value;
+        }
+
+        handleMovement(motorGroup, &movementUnit);
       }
     }
   }
@@ -202,16 +213,25 @@ void handleControllerInput() {
 // Main.
 int main() {
 
-  if (setup() < 0) {
+  // Each inner array element are the two GPIO pins that control each motor.
+  MotorGroup motors = {{{RIGHT_FRONT_FORWARD, RIGHT_FRONT_REVERSE},
+                        {LEFT_FRONT_FORWARD, LEFT_FRONT_REVERSE},
+                        {RIGHT_BACK_FORWARD, RIGHT_BACK_REVERSE},
+                        {LEFT_BACK_FORWARD, LEFT_BACK_REVERSE}}};
+
+  if (setup(&motors) < 0) {
     cout << "Failed at setup.";
     return 0;
   }
 
-  kill();
+  // testMotor(RIGHT_FRONT_FORWARD);
+  // return 0;
 
-  handleControllerInput();
+  kill(&motors);
 
-  kill();
+  handleControllerInput(&motors);
+
+  kill(&motors);
 
   gpioTerminate();
   return 0;
