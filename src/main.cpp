@@ -83,37 +83,16 @@ void kill() {
 
 // Data structure for a unit of trigger press (either LT or RT).
 struct TriggerUnit {
-  bool direction; // true = forward, false = backward
-  int speed;      // 0-255
-
-  bool getDirection() { return direction; }
-  void setDirection(bool newDir) { direction = newDir; }
-
-  int getSpeed() { return direction; }
-  void setSpeed(int newSpeed) { speed = newSpeed; }
+  bool &direction; // true = forward, false = backward
+  int &speed;      // 0-255
 };
 
 // Data structure for a unit of movement (includes left joystick movement + the
 // current TriggerUnit).
 struct MovementUnit {
-  int leftJoystickY; // 0-255
-  int leftJoystickX; // 0-255
-  TriggerUnit triggerUnit;
-
-  int getLeftJoystickY() { return leftJoystickY; }
-  void setLeftJoystickY(int newLjY) { leftJoystickY = newLjY; }
-
-  int getLeftJoystickX() { return leftJoystickX; }
-  void setLeftJoystickX(int newLjX) { leftJoystickX = newLjX; }
-
-  TriggerUnit getTriggerUnit() { return triggerUnit; }
-  void setTriggerUnit(TriggerUnit newTriggerUnit) {
-    triggerUnit = newTriggerUnit;
-  }
+  int &leftX; // 0-255
+  TriggerUnit *triggerUnit;
 };
-
-// GLOBAL MOVEMENT UNIT
-MovementUnit globalMovement;
 
 // *****
 // Drive forward (true) or backward (false) depending on 'direction' param.
@@ -154,13 +133,9 @@ void complexDrive(bool direction, int speed, int leftX) {
 // ******
 // The main function for directing the handling of the car based on
 // controller input.
-void handleMovement(bool direction, int speed, int leftX) {
-  if (isInRange(leftX, 0, 255)) {
-    basicDrive(direction, speed);
-    return;
-  }
-
-  complexDrive(direction, speed, leftX);
+void handleMovement(MovementUnit *&unit) {
+  basicDrive(unit->triggerUnit->direction, unit->triggerUnit->speed);
+  // complexDrive(direction, speed, leftX);
 }
 
 // *****
@@ -184,37 +159,37 @@ void handleControllerInput() {
 
   struct input_event ev;
 
+  // Initialize drive values;
+  MovementUnit *movementUnit;
+  movementUnit->leftX = 255 / 2;
+  movementUnit->triggerUnit->direction = true;
+  movementUnit->triggerUnit->speed = 0;
+  cout << "here";
+
   while (true) {
     while (libevdev_next_event(dev, LIBEVDEV_READ_FLAG_NORMAL, &ev) ==
            LIBEVDEV_READ_STATUS_SUCCESS) {
+
       string type = libevdev_event_type_get_name(ev.type);
       string code = libevdev_event_code_get_name(ev.type, ev.code);
-      int value = ev.value;
 
       if (type != "EV_SYN") {
 
-        // std::cout << "Type " << type << ", Code " << code << ", Value " <<
-        // value << std::endl;
-
         if (code == "ABS_RZ") {
-          globalMovement.setTriggerUnit({1, value});
+          movementUnit->triggerUnit->direction = true;
+          movementUnit->triggerUnit->speed = ev.value;
         }
 
         else if (code == "ABS_Z") {
-          globalMovement.setTriggerUnit({0, value});
-        }
-
-        else if (code == "ABS_Y") {
-          globalMovement.setLeftJoystickY(value);
+          movementUnit->triggerUnit->direction = false;
+          movementUnit->triggerUnit->speed = ev.value;
         }
 
         else if (code == "ABS_X") {
-          globalMovement.setLeftJoystickX(value);
+          movementUnit->leftX = ev.value;
         }
 
-        handleMovement(globalMovement.getTriggerUnit().direction,
-                       globalMovement.getTriggerUnit().speed,
-                       globalMovement.getLeftJoystickX());
+        handleMovement(movementUnit);
       }
     }
   }
@@ -233,7 +208,6 @@ int main() {
   }
 
   kill();
-  globalMovement.setLeftJoystickX(125);
 
   handleControllerInput();
 
