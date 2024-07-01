@@ -80,11 +80,6 @@ void driveCar(int fd, MovementUnit *mvUnit) {
   writeReg(fd, STEERING_SERVO, scaleServoPWMValue(mvUnit->leftX));
 }
 
-// Steers the car.
-void steerCar(int fd, MovementUnit *mvUnit) {
-  writeReg(fd, STEERING_SERVO, mvUnit->leftX);
-}
-
 void setSpeed(MovementUnit *mvUnit, int value) {
   if (value < 100) {
     mvUnit->speed = 0;
