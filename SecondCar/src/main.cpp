@@ -80,6 +80,7 @@ void driveCar(int fd, MovementUnit *mvUnit) {
   writeReg(fd, STEERING_SERVO, scaleServoPWMValue(mvUnit->leftX));
 }
 
+// Sets the speed of the car
 void setSpeed(MovementUnit *mvUnit, int value) {
   if (value < 100) {
     mvUnit->speed = 0;
@@ -97,11 +98,13 @@ void handleControllerInput(int i2cFd, MovementUnit *mvUnit) {
 
   fd = open("/dev/input/event4", O_RDONLY | O_NONBLOCK);
   if (fd < 0) {
+    close(fd);
     printf("Error getting controller event.");
   }
 
   rc = libevdev_new_from_fd(fd, &dev);
-  if (fd < 0) {
+  if (rc < 0) {
+    close(fd);
     fprintf(stderr, "error: %d %s\n", -rc, strerror(-rc));
   }
 
@@ -144,11 +147,13 @@ int main() {
   int fd = open(I2C_DEV, O_RDWR);
   if (fd < 0) {
     printf("Could not open I2C device.\n");
+    close(fd);
     return -1;
   }
 
   if (ioctl(fd, I2C_SLAVE, ADDR) < 0) {
     printf("Could not set I2C device address\n");
+    close(fd);
     return -1;
   }
 
