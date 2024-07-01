@@ -11,7 +11,6 @@
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
-#include <vector>
 
 const char *I2C_DEV = "/dev/i2c-1";
 const int ADDR = 0x18;
@@ -86,6 +85,14 @@ void steerCar(int fd, MovementUnit *mvUnit) {
   writeReg(fd, STEERING_SERVO, mvUnit->leftX);
 }
 
+void setSpeed(MovementUnit *mvUnit, int value) {
+  if (value < 100) {
+    mvUnit->speed = 0;
+  } else {
+    mvUnit->speed = value;
+  }
+}
+
 // *****
 // For interacting with a ps5 controller
 void handleControllerInput(int i2cFd, MovementUnit *mvUnit) {
@@ -116,16 +123,16 @@ void handleControllerInput(int i2cFd, MovementUnit *mvUnit) {
 
         if (code == "ABS_RZ") {
           mvUnit->direction = 0;
-          mvUnit->speed = ev.value;
+          setSpeed(mvUnit, ev.value);
         }
 
         else if (code == "ABS_Z") {
           mvUnit->direction = 1;
-          mvUnit->speed = ev.value;
+          setSpeed(mvUnit, ev.value);
         }
 
         else if (code == "ABS_X") {
-          mvUnit->leftX = abs(ev.value - 255);
+          mvUnit->leftX = ev.value;
         }
 
         driveCar(i2cFd, mvUnit);
