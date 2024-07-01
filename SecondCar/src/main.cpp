@@ -163,5 +163,6 @@ int main() {
 
   handleControllerInput(fd, &mvUnit);
 
+  close(fd);
   return 0;
 }
